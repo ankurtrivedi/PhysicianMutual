@@ -1,0 +1,1012 @@
+# Exported from:        http://Ankur-Trivedi:5516/
+# Release version:      22.1.1
+# Date created:         Mon Feb 13 14:24:15 EST 2023
+
+---
+apiVersion: xl-release/v1
+kind: Templates
+metadata:
+  home: Physicians Mutual
+spec:
+- name: PhysicianMutual
+  type: xlrelease.GitHubScmConnectorConfig
+  repository: ankurtrivedi/PhysicianMutual
+  credential:
+    type: xlrelease.GitHubOAuth2Token
+    token: !value "xlrelease_GitHubOAuth2Token_token"
+- pattern: Daily Release Pattern
+  stages:
+  - stage: Dev
+    transition:
+      name: New Transition
+      type: delivery.Transition
+      conditions:
+      - type: delivery.ConditionGroup
+        operator: AND
+        conditions:
+        - type: delivery.ConditionGroup
+          operator: OR
+          conditions:
+          - type: delivery.ItemsCompletionCondition
+  - stage: QA
+    transition:
+      name: New Transition
+      type: delivery.Transition
+      conditions:
+      - type: delivery.ConditionGroup
+        operator: OR
+        conditions:
+        - type: delivery.ConditionGroup
+          operator: AND
+          conditions:
+          - type: delivery.ItemsCompletionCondition
+  - stage: Staging
+    transition:
+      name: New Transition
+      type: delivery.Transition
+      conditions:
+      - type: delivery.ConditionGroup
+        operator: OR
+        conditions:
+        - type: delivery.ConditionGroup
+          operator: AND
+          conditions:
+          - type: delivery.ItemsCompletionCondition
+  - stage: Production
+- template: Daily Release Template
+  description: "Show cases a detailed release plan utilizing rally integration. use\
+    \ [xlr-rally-plugin](https://github.com/xebialabs-community/xlr-rally-plugin/releases)"
+  scheduledStartDate: 2016-03-15T09:00:00-04:00
+  phases:
+  - phase: PLANNING
+    plannedDuration: 900
+    tasks:
+    - name: "Fetch release candidates for ${RallyReleaseID}"
+      type: xlrelease.Task
+      description: Would be moved to an automated task using the Rally integration(Query
+        Status) using  Deployment type and release ID.
+    - name: Release Candidate Tasks
+      type: xlrelease.UserInputTask
+      description: Please enter the required information below.
+      variables:
+      - RallyDevTaskID
+      - RallyStagingTaskID
+      - RallyQATaskID
+      - RallyProductionTaskID
+      - RallyPostProdTaskID
+    - name: Copy appName
+      type: xlrelease.ScriptTask
+      script: "releaseVariables['appName'] = releaseVariables['applicationName'][0]"
+    - name: Start Release
+      type: xlrelease.GateTask
+      owner: John
+    - name: Find Or Create Delivery
+      type: delivery.FindOrCreateDelivery
+      fallback: true
+      ^title: "${RallyReleaseID}"
+      pattern: ./Daily Release Pattern
+      folder: ./
+      variableMapping:
+        pythonScript.deliveryId: "${deliveryID}"
+    color: '#707070'
+  - phase: DEV
+    plannedDuration: 432000
+    tasks:
+    - name: Register App in delivery
+      type: delivery.RegisterTrackedItems
+      delivery: "${deliveryID}"
+      variableMapping:
+        pythonScript.trackedItems: "${applicationName}"
+    - name: "${RallyDevTaskID} task state to \"In progress\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: Deployment Approval
+      type: xlrelease.Task
+      owner: Brian
+    - name: Dev Deploy Task- UCD
+      type: xlrelease.Task
+      facets:
+      - type: udm.DeploymentTaskFacet
+        variableMapping:
+          applicationId: "${appName}"
+          version: "${ucdBuildNumber}"
+        environment: Dev
+    - name: Dev Validation
+      type: xlrelease.Task
+      owner: Brian
+    - name: "${RallyDevTaskID} task state to \"Complete\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: Mark Dev Complete
+      type: delivery.MarkTrackedItems
+      stage: Dev
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+      variableMapping:
+        pythonScript.trackedItems: "${applicationName}"
+    color: '#663366'
+  - phase: QA
+    plannedDuration: 432000
+    tasks:
+    - name: Wait for all apps to complete Dev
+      type: delivery.WaitForStage
+      stage: Dev
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+    - name: "${RallyQATaskID} task state to \"In progress\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: QA Approval
+      type: xlrelease.Task
+      owner: Brian
+    - name: QA Deploy Task- UCD
+      type: xlrelease.Task
+      facets:
+      - type: udm.DeploymentTaskFacet
+        variableMapping:
+          version: "${ucdBuildNumber}"
+        application: PhysiciansAppA
+        environment: QA
+    - name: "Testing  ${ucdBuildNumber}"
+      type: xlrelease.UserInputTask
+      description: Please enter the required information below.
+      owner: Brian
+      variables:
+      - QATestPassed
+      - QATestFailed
+    - name: "${RallyQATaskID} QA task state to \"Complete\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: Mark QA Complete
+      type: delivery.MarkTrackedItems
+      stage: QA
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+      variableMapping:
+        pythonScript.trackedItems: "${applicationName}"
+    color: '#ff9e3b'
+  - phase: STAGING
+    plannedDuration: 432000
+    tasks:
+    - name: Wait for all apps to complete QA
+      type: delivery.WaitForStage
+      stage: QA
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+    - name: "Request Approval for ${ucdBuildNumber} Deployment for STAGING"
+      type: xlrelease.Task
+      description: Cherwell Integration
+    - name: "${RallyStagingTaskID} task state to \"In progress\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: Staging Approval
+      type: xlrelease.Task
+      owner: Shriram
+    - name: Staging Deploy Task- UCD
+      type: xlrelease.Task
+      owner: Shriram
+      facets:
+      - type: udm.DeploymentTaskFacet
+        variableMapping:
+          version: "${ucdBuildNumber}"
+        application: PhysiciansAppA
+        environment: Staging
+    - name: "Testing  ${ucdBuildNumber}"
+      type: xlrelease.Task
+      owner: Shriram
+      locked: true
+    - name: "${RallyStagingTaskID} task state to \"Complete\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+      team: Release Admin
+    - name: Mark staging Complete
+      type: delivery.MarkTrackedItems
+      stage: Staging
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+      variableMapping:
+        pythonScript.trackedItems: "${applicationName}"
+    color: '#009CDB'
+  - phase: PROD
+    plannedDuration: 14400
+    tasks:
+    - name: Wait for all apps to complete Staging
+      type: delivery.WaitForStage
+      stage: Staging
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+    - name: "${RallyProductionTaskID} Approval task state to \"In progress\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: "Request Prod Approval for ${ucdBuildNumber} Deployment for PROD"
+      type: xlrelease.Task
+    - name: "Rally XLR: PROD task state to \"In progress\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: Prod Approval
+      type: xlrelease.Task
+      owner: Shriram
+    - name: Prod Deploy Task- UCD
+      type: xlrelease.Task
+      facets:
+      - type: udm.DeploymentTaskFacet
+        variableMapping:
+          version: "${ucdBuildNumber}"
+        application: PhysiciansAppA
+        environment: Production
+    - name: "Testing  ${ucdBuildNumber}"
+      type: xlrelease.Task
+      owner: Shriram
+      locked: true
+    - name: "${RallyProductionTaskID} task state to \"Complete\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    - name: Mark Prod Complete
+      type: delivery.MarkTrackedItems
+      stage: Production
+      delivery: "${deliveryID}"
+      pattern: ./Daily Release Pattern
+      variableMapping:
+        pythonScript.trackedItems: "${applicationName}"
+    color: '#68b749'
+  - phase: Post Prod
+    plannedDuration: 14400
+    tasks:
+    - name: Post Prod Activities
+      type: xlrelease.Task
+      owner: Shriram
+    - name: "Rally XLR: Post Prod task state to \"Complete\""
+      type: xlrelease.Task
+      description: Replace with an automated Rally task to update task.
+    color: '#009CDB'
+  variables:
+  - type: xlrelease.StringVariable
+    key: ucdBuildNumber
+  - type: xlrelease.StringVariable
+    key: Email_STG
+    requiresValue: false
+    showOnReleaseStart: false
+    label: Email_STG
+    description: Staging group email
+    value: "${global.email.xlr.admin}"
+  - type: xlrelease.StringVariable
+    key: BuildStatus
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: EMAIL_PRD
+    requiresValue: false
+    showOnReleaseStart: false
+    label: EMAIL_PRD
+    description: Production group email
+    value: "${global.email.xlr.admin}"
+  - type: xlrelease.StringVariable
+    key: RallyReleaseID
+  - type: xlrelease.StringVariable
+    key: RallyReleaseStatus
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: RallyDevTaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: RallyQATaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: RallyStagingTaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: RallyProductionTaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: RallyPostProdTaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: QA_TASKID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: assetId
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: AVEEnvironment
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: appName
+    requiresValue: false
+    showOnReleaseStart: false
+    label: App Name
+  - type: xlrelease.StringVariable
+    key: AnalyticType
+    requiresValue: false
+    showOnReleaseStart: false
+    label: "Analytic Type (Matlab, Python, EMAP)"
+  - type: xlrelease.StringVariable
+    key: AVE_CompletionTaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: AVE_BuildTaskID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: AVEUrl
+    requiresValue: false
+    showOnReleaseStart: false
+    label: AVE Environment URL
+  - type: xlrelease.StringVariable
+    key: Stage_TaskID
+    requiresValue: false
+    showOnReleaseStart: false
+    label: Stage CRP completion
+    description: Used for CRP completion
+  - type: xlrelease.StringVariable
+    key: Prod_TaskID
+    requiresValue: false
+    showOnReleaseStart: false
+    label: Production CRP Completion
+    description: Production CRP Completion
+  - type: xlrelease.StringVariable
+    key: DevUserID
+    requiresValue: false
+    showOnReleaseStart: false
+    label: Analytic Developer ID
+  - type: xlrelease.StringVariable
+    key: ReleaseID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: FlowDockEmail
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: CalcID
+    requiresValue: false
+    showOnReleaseStart: false
+    label: CalcID
+    description: Analytic Calculation ID for visual identification
+  - type: xlrelease.StringVariable
+    key: Applicability
+    requiresValue: false
+    showOnReleaseStart: false
+    description: JSON for Applicability
+  - type: xlrelease.StringVariable
+    key: TagMapping
+    requiresValue: false
+    showOnReleaseStart: false
+    description: JSON for TagMapping
+  - type: xlrelease.StringVariable
+    key: Assets
+    requiresValue: false
+    showOnReleaseStart: false
+    label: Assets
+    description: Used for passing JSON information to CRP service
+  - type: xlrelease.BooleanVariable
+    key: QATestPassed
+    requiresValue: false
+    showOnReleaseStart: false
+    label: QA Test Passed
+    value: true
+  - type: xlrelease.BooleanVariable
+    key: QATestFailed
+    requiresValue: false
+    showOnReleaseStart: false
+    label: QA Test Failed
+  - type: xlrelease.StringVariable
+    key: RallyWorkspaceRef
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: RallyProjectRef
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: deliveryID
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.ListStringVariable
+    key: applicationName
+  scriptUsername: admin
+  scriptUserPassword: !value "xlrelease_Release_Daily_Release_Template_scriptUserPassword"
+  riskProfile: Default risk profile
+- template: Rally Integration Sample
+  description: "This shows integration of XL Release with Github, Jenkins, XL Deploy,\
+    \ Rally using a basic flow.  It requires the [xlr-rally-plugin](https://github.com/xebialabs-community/xlr-rally-plugin/releases)"
+  scheduledStartDate: 2016-12-05T09:00:00-05:00
+  releaseTriggers:
+  - name: code commit trigger
+    type: git.Poll
+    enabled: false
+    releaseTitle: "New Release for commit ID ${commitId}"
+    variables:
+    - type: xlrelease.StringVariable
+      key: gitCommitID
+      label: Git CommitID
+      description: This captures the value of commit ID from Trigger
+      value: "${commitId}"
+    - type: xlrelease.StringVariable
+      key: commitMessage
+      requiresValue: false
+      showOnReleaseStart: false
+    - type: xlrelease.StringVariable
+      key: buildNumber
+      requiresValue: false
+      showOnReleaseStart: false
+    - type: xlrelease.StringVariable
+      key: storyID
+      requiresValue: false
+      showOnReleaseStart: false
+    template: Applications/Release496384444
+    branch: master
+    commitId: 7b90d576b37a7018f89823bcf4a857db49e7e78a
+  phases:
+  - phase: DEV
+    tasks:
+    - name: Get Commit Message
+      type: webhook.JsonWebhook
+      URL: "https://api.github.com/repos/ankurtrivedi/spring-petclinic/commits/${gitCommitID}"
+      jsonPathExpression: commit.message
+      variableMapping:
+        pythonScript.result: "${commitMessage}"
+    - name: Fetch Rally Story ID
+      type: xlrelease.ScriptTask
+      script: |-
+        a = releaseVariables["commitMessage"]
+        g = re.search('story[ ]*=[ ]*([a-z]*[0-9]*)', a.lower()).groups()[0]
+        releaseVariables["storyID"] = g.upper()
+    - name: Kickoff Jenkins Job
+      type: jenkins.Build
+      username: user
+      jobName: petclinic
+      variableMapping:
+        pythonScript.buildNumber: "${buildNumber}"
+    - name: "Update Notes for ${storyID}"
+      type: rally.UpdateProperties
+    - name: Deploy to DEV
+      type: xldeploy.Deploy
+      deploymentPackage: "petclinic/${buildNumber}"
+      deploymentEnvironment: DEV
+    - name: Perform Functional Testing
+      type: xlrelease.GateTask
+      owner: admin
+      conditions:
+      - name: Functional tests successful
+        type: xlrelease.GateCondition
+    color: '#009CDB'
+  - phase: TEST
+    tasks:
+    - name: "Update Notes for ${storyID}"
+      type: rally.UpdateProperties
+    - name: Deploy to QA
+      type: remoteScript.Unix
+      script: puppet apply download.pp
+      remotePath: /root
+      address: 40.76.201.184
+      username: rdoadmin
+      privateKeyFile: /root/.ssh/pi_id_rsa
+      sudoUsername: root
+      sudo: true
+    color: '#009CDB'
+  tags:
+  - gp
+  variables:
+  - type: xlrelease.StringVariable
+    key: gitCommitID
+    label: Git CommitID
+    description: This captures the value of commit ID from Trigger
+  - type: xlrelease.StringVariable
+    key: commitMessage
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: buildNumber
+    requiresValue: false
+    showOnReleaseStart: false
+  - type: xlrelease.StringVariable
+    key: storyID
+    requiresValue: false
+    showOnReleaseStart: false
+  scriptUsername: almadmin
+  extensions:
+  - name: Dashboard
+    type: xlrelease.Dashboard
+    tiles:
+    - name: Release progress
+      type: xlrelease.ReleaseProgressTile
+    - name: Release health
+      type: xlrelease.ReleaseHealthTile
+    - name: Resource usage
+      type: xlrelease.ResourceUsageTile
+    - name: Release summary
+      type: xlrelease.ReleaseSummaryTile
+    - name: Release timeline
+      type: xlrelease.TimelineTile
+  riskProfile: Default risk profile
+- name: Deployments
+  type: xlrelease.DeploymentsByStageDashboard
+  owner: admin
+  tiles:
+  - type: xlrelease.PlaceholderTile
+    row: 0
+    col: 0
+    content: Development
+  - name: Current applications
+    type: deployment.CurrentApplicationsTile
+    width: 1
+    height: 1
+    row: 1
+    col: 0
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Development
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Activity
+    type: deployment.DeploymentsActivityTile
+    width: 1
+    row: 2
+    col: 0
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Development
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Total deployments
+    type: deployment.TotalDeploymentsTile
+    width: 1
+    height: 1
+    row: 4
+    col: 0
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Development
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Deployments
+    type: deployment.DeploymentsDistributionTile
+    width: 1
+    row: 5
+    col: 0
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Development
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+    height: 1
+  - name: Deployment success rate
+    type: deployment.DeploymentsSuccessRateTile
+    width: 1
+    height: 1
+    row: 6
+    col: 0
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Development
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - type: xlrelease.PlaceholderTile
+    row: 0
+    col: 1
+    content: Test
+  - name: Current applications
+    type: deployment.CurrentApplicationsTile
+    width: 1
+    height: 1
+    row: 1
+    col: 1
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Test
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Activity
+    type: deployment.DeploymentsActivityTile
+    width: 1
+    row: 2
+    col: 1
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Test
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Total deployments
+    type: deployment.TotalDeploymentsTile
+    width: 1
+    height: 1
+    row: 4
+    col: 1
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Test
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Deployments
+    type: deployment.DeploymentsDistributionTile
+    width: 1
+    row: 5
+    col: 1
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Test
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+    height: 1
+  - name: Deployment success rate
+    type: deployment.DeploymentsSuccessRateTile
+    width: 1
+    height: 1
+    row: 6
+    col: 1
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Test
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - type: xlrelease.PlaceholderTile
+    row: 0
+    col: 2
+    content: Acceptance
+  - name: Current applications
+    type: deployment.CurrentApplicationsTile
+    width: 1
+    height: 1
+    row: 1
+    col: 2
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Acceptance
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Activity
+    type: deployment.DeploymentsActivityTile
+    width: 1
+    row: 2
+    col: 2
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Acceptance
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Total deployments
+    type: deployment.TotalDeploymentsTile
+    width: 1
+    height: 1
+    row: 4
+    col: 2
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Acceptance
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Deployments
+    type: deployment.DeploymentsDistributionTile
+    width: 1
+    row: 5
+    col: 2
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Acceptance
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+    height: 1
+  - name: Deployment success rate
+    type: deployment.DeploymentsSuccessRateTile
+    width: 1
+    height: 1
+    row: 6
+    col: 2
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Acceptance
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - type: xlrelease.PlaceholderTile
+    row: 0
+    col: 3
+    content: Production
+  - name: Current applications
+    type: deployment.CurrentApplicationsTile
+    width: 1
+    height: 1
+    row: 1
+    col: 3
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Production
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Activity
+    type: deployment.DeploymentsActivityTile
+    width: 1
+    row: 2
+    col: 3
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Production
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Total deployments
+    type: deployment.TotalDeploymentsTile
+    width: 1
+    height: 1
+    row: 4
+    col: 3
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Production
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  - name: Deployments
+    type: deployment.DeploymentsDistributionTile
+    width: 1
+    row: 5
+    col: 3
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Production
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+    height: 1
+  - name: Deployment success rate
+    type: deployment.DeploymentsSuccessRateTile
+    width: 1
+    height: 1
+    row: 6
+    col: 3
+    filters:
+    - type: xlrelease.EnvironmentStageFilter
+      stage: Production
+    - type: xlrelease.FolderFilter
+      folder: ./
+    - type: xlrelease.DateFilter
+      timeFrame: LAST_MONTH
+  columns: 4
+  filters:
+  - type: xlrelease.FolderFilter
+    folder: ./
+  - type: xlrelease.DateFilter
+    timeFrame: LAST_MONTH
+- notifications:
+  - notification: TASK_OVERDUE
+    priority: High
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release is overdue.
+
+      After the task is completed, please mark it as Completed in Release.
+    roles:
+    - Watcher
+    - Release Admin
+    - Task Owner
+  - notification: TASK_FLAGGED
+    priority: High
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The status of the **${task.title}** task in the **${release.title}** release was changed to **${task.flagStatus}** with the following comment:
+
+      **${release.flagComment}**
+    roles:
+    - Watcher
+    - Release Admin
+    - Task Team
+  - notification: AUDIT_REPORT_JOB_ABORTED
+    priority: Normal
+    subject: "[Release] Audit report was aborted"
+    body: |-
+      **Your audit report was aborted!**
+
+       Please try to generate it again or contact your Release administrator for assistance.
+  - notification: MANUAL_TASK_STARTED
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release has started and is assigned to you or your team.
+
+      After the task is completed, please mark it as Completed in Release.
+    roles:
+    - Watcher
+    - Task Owner
+  - notification: TASK_FAILED
+    priority: High
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release has failed.
+
+      Other tasks could still be in progress, but the release will stop after they complete.
+
+      You can retry the task, reassign it to somebody else or abort the release.
+    roles:
+    - Watcher
+    - Task Team
+    - Task Owner
+  - notification: USER_MENTIONED
+    priority: Normal
+    subject: "[Release] ${mentionedByFullName} mentioned you on ${release.title}:\
+      \ ${task.title}"
+    body: "**${mentionedByFullName}** mentioned you on the **${task.title}** task\
+      \ in the **${release.title}** release:"
+  - notification: COMMENT_ADDED
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      **${comment.authorFullName}** commented on the **${task.title}** task in the **${release.title}** release:
+
+      ${comment.text}
+    roles:
+    - Watcher
+    - Task Team
+    - Task Owner
+  - notification: AUDIT_REPORT_JOB_FAILED
+    priority: Normal
+    subject: "[Release] Audit report has failed"
+    body: |-
+      **Your audit report has failed!**
+
+       Please try to generate it again or contact your Release administrator for assistance.
+  - notification: RELEASE_FAILED
+    priority: High
+    subject: "[Release] ${release.title}"
+    body: |-
+      The **${release.title}** release has failed due to a task failure.
+
+      The release is now stopped.
+
+      You can retry the failed task, reassign it to somebody else or abort the release.
+    roles:
+    - Release Admin
+  - notification: TASK_DUE_SOON
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release is due in **${task.dueInHours}** hours and **${task.dueInMinutes}** minutes.
+
+      After the task is completed, please mark it as Completed in Release.
+    roles:
+    - Watcher
+    - Release Admin
+    - Task Owner
+  - notification: ACTIVE_TASK_UNASSIGNED
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release is active but not assigned to anyone anymore.
+
+      Please assign the task to a user or a team.
+    roles:
+    - Watcher
+    - Task Team
+    - Task Owner
+  - notification: RELEASE_FAILING
+    priority: High
+    subject: "[Release] ${release.title}"
+    body: |-
+      The **${release.title}** release is failing due to a task failure.
+
+      Other tasks may still be in progress, but the release will stop after they complete.
+
+      You can retry the failed task, reassign it to somebody else or abort the release.
+    roles:
+    - Release Admin
+  - notification: RELEASE_FLAGGED
+    priority: High
+    subject: "[Release] ${release.title}"
+    body: |-
+      The status of the **${release.title}** release was changed to **${release.flagStatus}** with the following comment:
+
+      **${release.flagComment}**
+    roles:
+    - Release Admin
+  - notification: MANUAL_TASK_STARTED_WITHOUT_OWNER
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release has started, but it is not assigned.
+
+      Please assign the task to a user or a team.
+    roles:
+    - Watcher
+    - Release Admin
+  - notification: RELEASE_COMPLETED
+    priority: Normal
+    subject: "[Release] ${release.title}"
+    body: "The **${release.title}** release has been completed."
+    roles:
+    - Release Admin
+  - notification: TASK_WAITING_FOR_INPUT
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: |-
+      The **${task.title}** task in the **${release.title}** release needs your input.
+
+      Please enter the required information so the release can continue.
+    roles:
+    - Watcher
+    - Task Team
+    - Task Owner
+  - notification: AUDIT_REPORT_JOB_COMPLETED
+    priority: Normal
+    subject: "[Release] Report '${report.reportName}' is ready"
+    body: |-
+      **Your audit report is complete!**
+
+       '${report.reportName}' is ready for download.
+  - notification: RELEASE_STARTED
+    priority: Normal
+    subject: "[Release] ${release.title}"
+    body: "The **${release.title}** release has been started."
+    bulkSubject: "[Release] Multiple releases started"
+    bulkBody: |-
+      The following releases have been started:
+
+      ${#releases}
+      * [${title}](${url})
+      ${/releases}
+    roles:
+    - Release Admin
+  - notification: RELEASE_ABORTED
+    priority: Normal
+    subject: "[Release] ${release.title}"
+    body: "The **${release.title}** release has been aborted."
+    bulkSubject: "[Release] Multiple releases aborted"
+    bulkBody: |-
+      The following releases have been aborted:
+
+      ${#releases}
+      * [${title}](${url})
+      ${/releases}
+    roles:
+    - Release Admin
+  - notification: ACTIVE_TASK_ASSIGNED
+    priority: Normal
+    subject: "[Release] ${release.title}: ${task.title}"
+    body: "The active task **${task.title}** in the **${release.title}** release is\
+      \ now assigned to ${task.ownerFullName}."
+    roles:
+    - Watcher
+    - Task Team
+    - Task Owner
